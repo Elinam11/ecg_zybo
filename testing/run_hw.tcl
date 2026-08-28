@@ -13,8 +13,8 @@ set REPO   [file normalize "$PS_DIR/.."]
 
 set opt_record     "100"
 set opt_program    1
-set opt_bit        "$REPO/vivado/proj_ecg/ecg_zybo.runs/impl_1/ecg_system_wrapper.bit"
-set opt_elf        "$PS_DIR/workspace/ecg_app/Debug/ecg_app.elf"
+set opt_bit        "$REPO/ecg_system_wrapper.bit"
+set opt_elf        "$REPO/ecg_app.elf"
 set opt_bram_base  0x40000000
 
 for {set i 0} {$i < [llength $argv]} {incr i} {
@@ -27,7 +27,7 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
     }
 }
 
-set sample_bin "$REPO/data/coe/${opt_record}.bin"
+set sample_bin "$REPO/${opt_record}.bin"
 
 connect
 
@@ -69,6 +69,7 @@ puts "Downloading $opt_elf"
 dow $opt_elf
 con
 
-puts "Running. Capture the frame with:"
+puts "Running. Capture the frame with (PORT = the Digilent COM port on this cable,"
+puts "which carries the PS UART as well as JTAG; no other terminal may hold it):"
 puts "  python python/scripts/serial_rx.py --port <PORT> --record $opt_record"
 exit 0

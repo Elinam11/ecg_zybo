@@ -64,14 +64,29 @@ int ecg_encode_nonqrs(const ecg_bram_word_t* samples, ecg_index_t start, int len
 #pragma HLS INLINE
     const int padded_len = ecg_dwt_padded_len(length);
 
-    // Load and pad. Padding repeats the last sample rather than inserting zeros, so
-    // no artificial edge step leaks energy into every detail band.
+    // Load packed words, then pad. Sample-by-sample II=1/2 skews the even half
+    // the same way as the QRS window load (see lossless.cpp).
+    int n = 0;
+    if ((start & 1) && length > 0) {
+        buf[0] = (ecg_coeff_t)ecg_bram_read(samples, start);
+        n = 1;
+    }
 load_segment:
-    for (int i = 0; i < padded_len; i++) {
-#pragma HLS LOOP_TRIPCOUNT min = ECG_DWT_BLOCK max = ECG_MAX_LOSSY_SEGMENT
-#pragma HLS PIPELINE II = 1
-        const int src = (i < length) ? i : (length - 1);
-        buf[i] = (ecg_coeff_t)ecg_bram_read(samples, start + src);
+    for (; n + 1 < length; n += 2) {
+#pragma HLS LOOP_TRIPCOUNT min = 0 max = (ECG_MAX_LOSSY_SEGMENT / 2)
+#pragma HLS PIPELINE off
+        const uint32_t word = ecg_bram_load_word(samples, (start + n) >> 1);
+        buf[n] = (ecg_coeff_t)(ecg_sample_t)(uint16_t)(word & 0xFFFFu);
+        buf[n + 1] = (ecg_coeff_t)(ecg_sample_t)(uint16_t)(word >> 16);
+    }
+    if (n < length) {
+        buf[n] = (ecg_coeff_t)ecg_bram_read(samples, start + n);
+        n++;
+    }
+pad_segment:
+    for (; n < padded_len; n++) {
+#pragma HLS LOOP_TRIPCOUNT min = 0 max = ECG_DWT_BLOCK
+        buf[n] = buf[length - 1];
     }
 
     ecg_haar_forward(buf, padded_len, scratch);

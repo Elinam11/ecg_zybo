@@ -194,7 +194,9 @@ def main() -> int:
     parser.add_argument("records", nargs="*", default=None)
     parser.add_argument("--mode", choices=("reference", "hardware"),
                         default="reference")
-    parser.add_argument("--port", default=None, help="serial port, for hardware mode")
+    parser.add_argument("--port", default=None,
+                        help="serial port for hardware mode: the board's PROG micro-USB "
+                             "COM port, which carries the PS UART")
     parser.add_argument("--xsct", default="xsct")
     parser.add_argument("--timeout", type=float, default=60.0,
                         help="serial read timeout per record")

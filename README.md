@@ -101,6 +101,11 @@ xsct ps/run_hw.tcl -record 100
 python python/scripts/serial_rx.py --port COM5 --record 100
 ```
 
+One micro-USB cable does all of it: `COM5` above is the Digilent COM port on the board's
+PROG connector, which carries JTAG, the firmware log and the compressed frame. The
+firmware keeps the console silent while the frame is going out so the two can share the
+wire, and the receiver resynchronises on the frame's sync word.
+
 See [docs/hardware_bringup.md](docs/hardware_bringup.md) for prerequisites, pass
 criteria and a fault-isolation guide.
 

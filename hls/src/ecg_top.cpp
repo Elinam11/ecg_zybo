@@ -118,7 +118,7 @@ void ecg_top(const ecg_bram_word_t* ecg_bram, uint32_t n_samples,
 // default-sized BRAM stub, so only a few samples are real and the rest read as
 // garbage (few peaks, massive coefficient saturation, huge bitstream).
 // Depth is in 32-bit words (two packed samples each), matching blk_mem_gen.
-#pragma HLS INTERFACE bram port = ecg_bram depth = ECG_N_BRAM_WORDS
+#pragma HLS INTERFACE bram port = ecg_bram depth = ECG_N_BRAM_WORDS storage_type = ram_1p latency = 2
 #pragma HLS INTERFACE axis port = out_stream
 #pragma HLS INTERFACE s_axilite port = n_samples bundle = ctrl
 #pragma HLS INTERFACE s_axilite port = status bundle = ctrl

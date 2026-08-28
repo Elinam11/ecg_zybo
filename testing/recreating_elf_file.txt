@@ -1,0 +1,15 @@
+cd C:\Users\elina\Moved_files\Capstone\ECG_Code
+C:\Xilinx\Vitis\2023.2\bin\xsct.bat 
+
+setws C:/Users/elina/Moved_files/Capstone/ECG_Code/ps/workspace
+platform create -name ecg_platform -hw C:/Users/elina/Moved_files/Capstone/ECG_Code/vivado/ecg_system_wrapper.xsa -proc ps7_cortexa9_0 -os standalone -out C:/Users/elina/Moved_files/Capstone/ECG_Code/ps/workspace
+platform generate
+platform active ecg_platform
+
+Create the app:
+app create -name ecg_app -platform ecg_platform -domain standalone_domain -template {Empty Application(C)}
+
+importsources -name ecg_app -path C:/Users/elina/Moved_files/Capstone/ECG_Code/ps/src -soft-link
+app config -name ecg_app include-path C:/Users/elina/Moved_files/Capstone/ECG_Code/hls/src
+app config -name ecg_app build-config debug
+app build -name ecg_app

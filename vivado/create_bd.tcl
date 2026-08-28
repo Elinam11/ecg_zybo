@@ -113,11 +113,16 @@ ecg_connect processing_system7_0/FCLK_RESET0_N proc_sys_reset_0/ext_reset_in
 # Port A serves the AXI BRAM controller; port B serves the HLS core. Both ports are
 # 32-bit wide (Vivado 2024.2 rejects asymmetric 16-bit port B on TDP when port A is
 # 32-bit). Initialisation uses the packed *_x32.coe: sample 2i in [15:0], 2i+1 in
-# [31:16]. The core addresses words and unpacks half-words in software/HLS.
+# [31:16]. The core unpacks half-words in software/HLS.
+#
+# Enable_32bit_Address MUST be true. AXI BRAM ctrl and Vitis HLS both present BYTE
+# addresses on the BRAM interface. With it false, those bytes are used as word
+# indices, so masters only ever see words 0,4,8,... (record 100 then detects ~877
+# peaks instead of 368, and PRD explodes).
 ecg_add_ip blk_mem_gen_0 xilinx.com:ip:blk_mem_gen
 set_property -dict [list \
     CONFIG.Memory_Type {True_Dual_Port_RAM} \
-    CONFIG.Enable_32bit_Address {false} \
+    CONFIG.Enable_32bit_Address {true} \
     CONFIG.Use_Byte_Write_Enable {true} \
     CONFIG.Byte_Size {8} \
     CONFIG.Write_Width_A {32} \
@@ -153,6 +158,9 @@ connect_bd_intf_net [get_bd_intf_pins axi_bram_ctrl_0/BRAM_PORTA] \
 ecg_add_ip ecg_top_0 capstone:ecg:ecg_top
 connect_bd_intf_net [get_bd_intf_pins ecg_top_0/ecg_bram_PORTA] \
                     [get_bd_intf_pins blk_mem_gen_0/BRAM_PORTB]
+# HLS must stay ram_1p (only PORTA). Csynth used to emit a second BRAM port for
+# the QRS k_scan pipeline; that pin has nowhere to connect on this TDP memory
+# (port A is already the AXI controller).
 
 # ---- DMA: stream to DDR ----
 # Simple (non scatter-gather) S2MM only. The core produces one buffer per run and

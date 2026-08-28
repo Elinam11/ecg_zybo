@@ -69,6 +69,7 @@ puts "Downloading $opt_elf"
 dow $opt_elf
 con
 
-puts "Running. Capture the frame with:"
+puts "Running. Capture the frame with (PORT = the Digilent COM port on this cable,"
+puts "which carries the PS UART as well as JTAG; no other terminal may hold it):"
 puts "  python python/scripts/serial_rx.py --port <PORT> --record $opt_record"
 exit 0

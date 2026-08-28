@@ -41,9 +41,18 @@ typedef int32_t ecg_index_t;     // sample indices
 // half-words (sample 2i in [15:0], sample 2i+1 in [31:16]) to match gen_coe.py.
 #define ECG_N_BRAM_WORDS (ECG_N_SAMPLES / 2)
 
+// Separate load so HLS must honour BRAM latency. An inlined `bram[i]` is often
+// scheduled as if data were combinational; on the board the 32-bit-addressed
+// memory is one extra cycle, so every packed word came back as the previous one.
+static uint32_t ecg_bram_load_word(const ecg_bram_word_t* bram, ecg_index_t word_idx) {
+#pragma HLS INLINE off
+#pragma HLS PIPELINE off
+    return bram[word_idx];
+}
+
 static inline ecg_sample_t ecg_bram_read(const ecg_bram_word_t* bram, ecg_index_t i) {
 #pragma HLS INLINE
-    const uint32_t word = bram[i >> 1];
+    const uint32_t word = ecg_bram_load_word(bram, i >> 1);
     const uint16_t half = (uint16_t)((i & 1) ? (word >> 16) : (word & 0xFFFFu));
     return (ecg_sample_t)half;
 }

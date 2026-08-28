@@ -13,9 +13,37 @@ int ecg_encode_qrs(const ecg_bram_word_t* samples, ecg_index_t start, int length
                    ecg_coder_out& out) {
     // Inlined into ecg_encode_stage at a single call site (shared emit/bitpack).
 #pragma HLS INLINE
-    const int32_t anchor0 = (length > 0) ? (int32_t)ecg_bram_read(samples, start) : 0;
-    const int32_t anchor1 =
-        (length > 1) ? (int32_t)ecg_bram_read(samples, start + 1) : 0;
+    // Copy the window through a single sequential BRAM port. Csynth otherwise
+    // auto-pipelines k_scan onto a dual-port ecg_bram (PORTA+PORTB). The BD only
+    // wires PORTA to the sample store, so PORTB reads are unbound and the encoder
+    // sees garbage (record 100: anchors 8,-11 and k=7 instead of -11,-11 and k=2).
+    ecg_sample_t window[ECG_QRS_WINDOW];
+#pragma HLS BIND_STORAGE variable = window type = ram_1p impl = lutram
+    if (length > ECG_QRS_WINDOW) length = ECG_QRS_WINDOW;
+    // One 32-bit BRAM load writes both packed samples. Pipelining that loop
+    // (even II=2) still captured the previous word, so the whole window was
+    // orig[start-2:] (record 100: k=2, CR~9.58, PRD QRS ~55%).
+load_qrs:
+    {
+        int i = 0;
+        if ((start & 1) && length > 0) {
+            window[0] = ecg_bram_read(samples, start);
+            i = 1;
+        }
+        for (; i + 1 < length; i += 2) {
+#pragma HLS LOOP_TRIPCOUNT min = 0 max = (ECG_QRS_WINDOW / 2)
+#pragma HLS PIPELINE off
+            const uint32_t word = ecg_bram_load_word(samples, (start + i) >> 1);
+            window[i] = (ecg_sample_t)(uint16_t)(word & 0xFFFFu);
+            window[i + 1] = (ecg_sample_t)(uint16_t)(word >> 16);
+        }
+        if (i < length) {
+            window[i] = ecg_bram_read(samples, start + i);
+        }
+    }
+
+    const int32_t anchor0 = (length > 0) ? (int32_t)window[0] : 0;
+    const int32_t anchor1 = (length > 1) ? (int32_t)window[1] : 0;
 
     // ---- Pass 1: accumulate the mapped residual sum so k can be chosen ----
     // k must be known before any residual is emitted because it is transmitted in the
@@ -26,10 +54,10 @@ int ecg_encode_qrs(const ecg_bram_word_t* samples, ecg_index_t start, int length
 k_scan:
     for (int i = ECG_ANCHOR_COUNT; i < length; i++) {
 #pragma HLS LOOP_TRIPCOUNT min = 0 max = ECG_QRS_WINDOW
-        const int32_t prev1 = (int32_t)ecg_bram_read(samples, start + i - 1);
-        const int32_t prev2 = (int32_t)ecg_bram_read(samples, start + i - 2);
-        const int32_t error =
-            (int32_t)ecg_bram_read(samples, start + i) - ecg_predict(prev1, prev2);
+#pragma HLS PIPELINE off
+        const int32_t prev1 = (int32_t)window[i - 1];
+        const int32_t prev2 = (int32_t)window[i - 2];
+        const int32_t error = (int32_t)window[i] - ecg_predict(prev1, prev2);
         residual_sum += (uint64_t)ecg_zigzag(error);
         coded++;
     }
@@ -48,10 +76,10 @@ k_scan:
 gr_encode:
     for (int i = ECG_ANCHOR_COUNT; i < length; i++) {
 #pragma HLS LOOP_TRIPCOUNT min = 0 max = ECG_QRS_WINDOW
-        const int32_t prev1 = (int32_t)ecg_bram_read(samples, start + i - 1);
-        const int32_t prev2 = (int32_t)ecg_bram_read(samples, start + i - 2);
-        const int32_t error =
-            (int32_t)ecg_bram_read(samples, start + i) - ecg_predict(prev1, prev2);
+#pragma HLS PIPELINE off
+        const int32_t prev1 = (int32_t)window[i - 1];
+        const int32_t prev2 = (int32_t)window[i - 2];
+        const int32_t error = (int32_t)window[i] - ecg_predict(prev1, prev2);
         const uint32_t mapped = ecg_zigzag(error);
         const uint32_t quotient = mapped >> k;
 

@@ -23,9 +23,13 @@
 #define ECG_BRAM_SIZE     0x00040000u
 #define ECG_CTRL_BASE     0x43C00000u   // ecg_top AXI4-Lite control
 
-// The DMA and UART are addressed through their BSP drivers, so they only need device
-// IDs. Everything else is a raw register access.
+// The DMA is addressed through its BSP driver, so it only needs a device ID. Everything
+// else is a raw register access.
 #define ECG_DMA_DEVICE_ID    XPAR_AXIDMA_0_DEVICE_ID
+
+// The PL UARTLite on Pmod JE1 is still in the block design but the firmware no longer
+// drives it: the compressed frame goes out the PS UART so a test needs only the one
+// micro-USB cable. Kept so a build against this BSP still names the peripheral.
 #define ECG_UART_DEVICE_ID   XPAR_UARTLITE_0_DEVICE_ID
 
 // ---------------------------------------------------------------------------

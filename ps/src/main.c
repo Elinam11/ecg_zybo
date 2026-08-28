@@ -4,7 +4,12 @@
 //   1. arm the DMA to receive the compressed frame into DDR
 //   2. start the PL core and time it with the A9 global timer
 //   3. read the status registers, build the 128-bit frame header from them
-//   4. push the transport preamble, the header and the payload out the PL UART
+//   4. push the transport preamble, the header and the payload out the PS UART
+//
+// The frame leaves on the PS UART, which is the same micro-USB console the log text
+// uses, so a board test needs one cable instead of a second adapter wired to Pmod JE1.
+// The cost is that text and binary share one link: everything human-readable must be
+// printed either side of the frame, never during it, or the host loses framing.
 //
 // The header is assembled here rather than in the PL because its last word is a
 // checksum over the whole payload, and a streaming master cannot revisit a header it
@@ -16,14 +21,18 @@
 
 #include "xil_cache.h"
 #include "xil_printf.h"
+#include "xil_types.h"
 #include "xaxidma.h"
-#include "xuartlite.h"
 #include "xtime_l.h"
 
 #include "ecg_hw.h"
 
+// The BSP's raw stdout byte sink, which for this platform is the PS UART. Declared here
+// because the header that exposes it moved between tool releases, and an implicit
+// declaration is an error under the default BSP compiler flags.
+void outbyte(char8 c);
+
 static XAxiDma dma;
-static XUartLite uart;
 
 // ---------------------------------------------------------------------------
 // Core control
@@ -59,15 +68,13 @@ static void ecg_core_read_status(ecg_run_status* s) {
 // UART transmission
 // ---------------------------------------------------------------------------
 
-// XUartLite_Send is non-blocking and only queues what fits in the FIFO, so a blocking
-// wrapper is needed to push a whole frame.
+// Raw bytes straight out of outbyte(), which blocks while the PS UART transmit FIFO is
+// full and so cannot drop a byte. printf() and friends are deliberately not used here:
+// they buffer, and a stdio layer is free to translate a 0x0A in the payload into CRLF,
+// which would corrupt the frame.
 static void uart_send_blocking(const uint8_t* data, uint32_t length) {
-    uint32_t sent = 0;
-    while (sent < length) {
-        sent += XUartLite_Send(&uart, (u8*)(data + sent), length - sent);
-        while (XUartLite_IsSending(&uart)) {
-            // Draining; the FIFO is 16 bytes deep and the link runs at 115200 baud.
-        }
+    for (uint32_t i = 0; i < length; i++) {
+        outbyte((char8)data[i]);
     }
 }
 
@@ -126,17 +133,27 @@ static int run_once(uint32_t n_samples) {
     const uint32_t frame_words = ECG_HEADER_WORDS + s.word_count;
     const uint32_t payload_bytes = s.word_count * 4u;
 
-    xil_printf("run: samples=%u beats=%u peaks=%u payload=%u words sat=%u\r\n",
-               (unsigned)n_samples, (unsigned)s.qrs_count, (unsigned)s.peak_count,
-               (unsigned)s.word_count, (unsigned)s.saturated);
-    xil_printf("     latency %u PL cycles (%u us)\r\n",
-               (unsigned)pl_cycles, (unsigned)(seconds * 1e6));
-
     if (payload_bytes > ECG_FRAME_BUFFER_BYTES) {
         xil_printf("ERROR: payload %u bytes exceeds the %u byte buffer\r\n",
                    (unsigned)payload_bytes, (unsigned)ECG_FRAME_BUFFER_BYTES);
         return XST_FAILURE;
     }
+
+    // Every human-readable line for this run goes out before the frame does. The host
+    // resynchronises on the sync word, so text ahead of the frame is harmless.
+    xil_printf("run: samples=%u beats=%u peaks=%u payload=%u words sat=%u\r\n",
+               (unsigned)n_samples, (unsigned)s.qrs_count, (unsigned)s.peak_count,
+               (unsigned)s.word_count, (unsigned)s.saturated);
+    xil_printf("     latency %u PL cycles (%u us)\r\n",
+               (unsigned)pl_cycles, (unsigned)(seconds * 1e6));
+    xil_printf("     sending %u bytes\r\n",
+               (unsigned)((ECG_UART_PREAMBLE + frame_words) * 4u));
+
+    // ------------------------------------------------------------------
+    // Quiet window: nothing but frame bytes may reach the UART from here
+    // to the end of the payload. A single stray log line lands inside the
+    // frame the host is counting out, and the capture is unrecoverable.
+    // ------------------------------------------------------------------
 
     // ---- Transport preamble: sync, length, measured latency ----
     uart_send_word(ECG_UART_SYNC);
@@ -149,11 +166,18 @@ static int run_once(uint32_t n_samples) {
     uart_send_word(((uint32_t)ECG_FS & 0xFFFFu) | ((s.qrs_count & 0xFFFFu) << 16));
     uart_send_word(s.checksum);
 
-    // ---- Payload, exactly as the PL produced it ----
-    uart_send_blocking(buffer, payload_bytes);
+    // ---- Payload words, big-endian on the wire (same as uart_send_word) ----
+    // The DMA buffer is native little-endian in DDR. Sending it with
+    // uart_send_blocking() put LE bytes on the wire while the header stayed BE,
+    // so the host saw a checksum mismatch and a corrupted bitstream.
+    {
+        const uint32_t *words = (const uint32_t *)(uintptr_t)buffer;
+        for (uint32_t i = 0; i < s.word_count; i++) {
+            uart_send_word(words[i]);
+        }
+    }
 
-    xil_printf("     sent %u bytes\r\n",
-               (unsigned)((ECG_UART_PREAMBLE + frame_words) * 4u));
+    // ---- End of quiet window ----
     return XST_SUCCESS;
 }
 
@@ -176,10 +200,8 @@ static int init_hardware(void) {
     }
     XAxiDma_IntrDisable(&dma, XAXIDMA_IRQ_ALL_MASK, XAXIDMA_DEVICE_TO_DMA);
 
-    if (XUartLite_Initialize(&uart, ECG_UART_DEVICE_ID) != XST_SUCCESS) {
-        xil_printf("ERROR: UARTLite initialisation failed\r\n");
-        return XST_FAILURE;
-    }
+    // No UART setup: the PS UART is already configured by ps7_init at the baud rate the
+    // BSP's stdout uses, and the PL UARTLite still in the block design is unused.
     return XST_SUCCESS;
 }
 
@@ -201,7 +223,9 @@ int main(void) {
     // before calling run_once.
     const int status = run_once(ECG_N_SAMPLES);
 
-    xil_printf(status == XST_SUCCESS ? "done\r\n" : "FAILED\r\n");
+    // The payload ends without a newline, so lead with one to keep this line readable in
+    // a terminal. The host has already stopped reading by now and ignores it.
+    xil_printf(status == XST_SUCCESS ? "\r\ndone\r\n" : "\r\nFAILED\r\n");
     Xil_DCacheDisable();
     return status;
 }

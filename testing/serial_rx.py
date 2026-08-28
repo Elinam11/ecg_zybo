@@ -6,7 +6,7 @@ the hardware's output, and the received frame is byte-identical to the golden on
 
 Three sources, all feeding the same parser:
 
-    --port COM5            live board over the PL UART
+    --port COM5            live board over the PS UART (the PROG micro-USB COM port)
     --file capture.bin     a previously captured byte stream
     --loopback 100         a frame synthesised from the reference model (no hardware)
 
