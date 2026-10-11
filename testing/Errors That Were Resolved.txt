@@ -1,0 +1,8 @@
+Errors That Were Resolved
+The data being written via JTAG seemed to be read out with a latency. so 2 reads would then show the right data.
+But what was in the BRAM was wrong.
+
+The bit file route which could also store data in BRAM when programming the FPGA PL was tried. But it showed that the data was wrong.
+For that, it was the an old bit file that was being programmed into the PL. the number of peaks aligned after that
+
+Now

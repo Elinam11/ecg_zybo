@@ -14,4 +14,5 @@ __all__ = [
     "packer",
     "pipeline",
     "metrics",
+    "pan_tompkins",
 ]

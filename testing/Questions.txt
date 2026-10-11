@@ -1,0 +1,18 @@
+
+
+what is xsdb. so the micro usb has both JTAG and UART
+why do we need a com port for python
+keep a copy of the arriving frame??
+-the serial_rx listens, waits for the byte sync word, (0x45434731)ECG1 before it captures the bytes that follows as the compressed data
+- source is used for tcl commands to load a script
+connect opens the cable, but we are already connected??
+
+what does the command loadhw do and what is APU
+So is JTAG the programming protocol
+When DAP (AHB AP transaction error) another tool is holding the cable
+why must it the hardware description be loaded on the APU id 1 and not cortex A first. does it need to be done before programming PL
+.xsa file contains the memory map, what else does it contain
+what is MIO
+urns on PS↔PL level shifters so AXI to 0x40000000 actually reaches the BRAM :: is this the communication between both fabrics 
+what do you mean if you open a serial terminal instead of python. what do you expect to be opened by referring to python
+why do you need to send a command to the APU different from the Cortex first

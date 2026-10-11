@@ -22,8 +22,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
+from pathlib import Path
 
 import _bootstrap  # noqa: F401
 import numpy as np
@@ -230,9 +232,17 @@ def main() -> int:
     print(f"received {len(frame)} bytes in {time.time() - t0:.1f}s")
 
     if args.save:
-        with open(args.save, "wb") as handle:
+        save_path = Path(args.save)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with save_path.open("wb") as handle:
             handle.write(frame)
-        print(f"wrote {args.save}")
+        meta = {"latency_cycles": latency_cycles}
+        if record:
+            meta["record"] = record
+        meta_path = save_path.with_name(f"{save_path.stem}.meta.json")
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {save_path}")
+        print(f"wrote {meta_path}")
 
     try:
         result = evaluate(frame, record)

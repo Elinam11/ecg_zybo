@@ -26,3 +26,5 @@ ps/workspace/
 # UART captures
 *.bin
 !data/coe/*.bin
+#paper
+paper/
