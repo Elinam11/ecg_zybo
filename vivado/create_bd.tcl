@@ -123,8 +123,7 @@ ecg_add_ip blk_mem_gen_0 xilinx.com:ip:blk_mem_gen
 set_property -dict [list \
     CONFIG.Memory_Type {True_Dual_Port_RAM} \
     CONFIG.Enable_32bit_Address {true} \
-    CONFIG.Use_Byte_Write_Enable {true} \
-    CONFIG.Byte_Size {8} \
+    CONFIG.Use_Byte_Write_Enable {false} \
     CONFIG.Write_Width_A {32} \
     CONFIG.Write_Depth_A {54000} \
     CONFIG.Read_Width_A {32} \
@@ -138,6 +137,10 @@ set_property -dict [list \
     CONFIG.Port_B_Enable_Rate {100} \
     CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
     CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
+] [get_bd_cells blk_mem_gen_0]
+# Load_Init_File / Coe_File stay disabled until Memory_Type is True Dual Port.
+# Applying them in the same dict is ignored and leaves the sample store empty.
+set_property -dict [list \
     CONFIG.Load_Init_File {true} \
     CONFIG.Coe_File $::ECG_COE_FILE \
     CONFIG.Fill_Remaining_Memory_Locations {true} \
@@ -279,6 +282,38 @@ assign_bd_address -offset 0x43C00000 -range 0x00010000 \
 
 # The DMA writes into the PS DDR through HP0.
 assign_bd_address [get_bd_addr_segs {processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM}]
+
+# IPI propagate sizes the sample store to the 256 KB AXI hole: 65536 x 32-bit
+# TDP is 64 BRAM36, which is already more than the XC7Z010. Software only uses
+# 54000 words (216000 bytes). Lock that depth as Stand_Alone so validate does
+# not inflate it. Byte-write enable stays off: 32-bit TDP then tiles at 1024
+# words per BRAM36 (53 blocks) instead of 512 (106 blocks).
+set_property -dict [list \
+    CONFIG.use_bram_block {Stand_Alone} \
+    CONFIG.Memory_Type {True_Dual_Port_RAM} \
+    CONFIG.Enable_32bit_Address {true} \
+    CONFIG.Use_Byte_Write_Enable {false} \
+    CONFIG.Write_Width_A {32} \
+    CONFIG.Write_Depth_A {54000} \
+    CONFIG.Read_Width_A {32} \
+    CONFIG.Operating_Mode_A {WRITE_FIRST} \
+    CONFIG.Write_Width_B {32} \
+    CONFIG.Read_Width_B {32} \
+    CONFIG.Operating_Mode_B {READ_FIRST} \
+    CONFIG.Enable_B {Use_ENB_Pin} \
+    CONFIG.Port_B_Clock {100} \
+    CONFIG.Port_B_Write_Rate {0} \
+    CONFIG.Port_B_Enable_Rate {100} \
+    CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+    CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
+    CONFIG.Disable_Collision_Warnings {true} \
+] [get_bd_cells blk_mem_gen_0]
+set_property -dict [list \
+    CONFIG.Load_Init_File {true} \
+    CONFIG.Coe_File $::ECG_COE_FILE \
+    CONFIG.Fill_Remaining_Memory_Locations {true} \
+    CONFIG.Remaining_Memory_Locations {0} \
+] [get_bd_cells blk_mem_gen_0]
 
 regenerate_bd_layout
 validate_bd_design

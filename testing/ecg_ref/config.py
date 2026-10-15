@@ -7,6 +7,8 @@ module so the two implementations can never drift apart.
 
 from __future__ import annotations
 
+import math
+
 # ---------------------------------------------------------------------------
 # Signal / dataset
 # ---------------------------------------------------------------------------
@@ -193,6 +195,57 @@ RLE_TOKEN_BITS = RLE_RUN_BITS + RLE_VAL_BITS  # 16
 # zeros and emits no coefficient. Real coefficients are never zero because only
 # non-zero coefficients produce a token.
 RLE_CONT_RUN = RLE_RUN_MAX
+
+# ---------------------------------------------------------------------------
+# Lossy path (bior4.4 / CDF 9/7) — Phase A golden-model formats
+# ---------------------------------------------------------------------------
+# Datapath is signed 25-bit Q19.6 so it fits the DSP48E1 25-bit port.
+# Lifting constants are signed Q2.16 so they fit the 18-bit port.
+BW_FRAC_DATA = 6
+BW_FRAC_CONST = 16
+BW_DATA_BITS = 25
+BW_DATA_MIN = -(1 << (BW_DATA_BITS - 1))
+BW_DATA_MAX = (1 << (BW_DATA_BITS - 1)) - 1
+BW_L_MAX = 5
+BW_MIN_APPROX = 16          # f(N): stop before cA would fall under 16 samples
+BW_BND_MARGIN = 32          # method-(b) margin only; default encoder is method (a)
+BW_DEFAULT_METHOD = "a"     # Checkpoint 2: mirror boundaries, no QRS neighbours
+BW_CA_DPCM = True           # first-differences on cA_L before Rice
+BW_CA_RLE = False           # Rice every cA sample; RLE only on detail bands
+BW_LIFT_ALPHA = -1.586134342059924
+BW_LIFT_BETA = -0.052980118572961
+BW_LIFT_GAMMA = 0.882911075530934
+BW_LIFT_DELTA = 0.443506852043971
+BW_LIFT_K = 1.230174104914001
+# pywt-style (near-orthonormal) scales applied after the four lifting steps:
+#   cA = (sqrt(2)/K) * y_even    cD = (-K/sqrt(2)) * y_odd
+BW_SCALE_LOW = math.sqrt(2.0) / BW_LIFT_K
+BW_SCALE_HIGH = -BW_LIFT_K / math.sqrt(2.0)
+BW_DZ_A_DEFAULT = 1.40
+# Hardware lossy path. LeGall 5/3 (integer add/shift) replaces CDF 9/7 so the
+# XC7Z010 does not have to build the Q16 lifting multipliers. Strict PRD stays
+# at or under 2.5% (the 9/7 freeze was 1.95%; 5/3 at a=1.4 measured 2.504% on
+# record 222, so a is one quantum finer).
+BW_WAVELET = "53"
+BW_RICE_K_MAX = GR_K_MAX
+BW_RICE_Q_ESC = GR_Q_ESCAPE
+BW_RICE_ESC_BITS = GR_ESCAPE_BITS
+# Lossy quantizer for the 5/3 hardware path. T = 1 ADU and a = 1 make Delta
+# exactly 1, so the quantizer is a shift (no multiplier). Record 222, the
+# binding case, is about 2.27% strict PRD. The a=1.25 scan of all 46 records
+# peaked at 2.41%, and a=1 is finer than that.
+BW_DZ_T_FROZEN = 1.0
+BW_DZ_A_FROZEN = 1.0
+# Provisional simple fixed Rice defaults for the T sweep (Order of work step 1).
+BW_RICE_K_RUN = 2
+BW_RICE_K_LVL_DETAIL = 1
+BW_RICE_K_LVL_APPROX = 4
+# Retrained at frozen (T, a) on all 46 records (run-length, zigzag-level).
+BW_RICE_K_TABLE = {
+    "cA0": (0, 4), "cA1": (0, 6), "cA2": (0, 6), "cA3": (0, 6),
+    "cA4": (0, 6), "cA5": (0, 7),
+    "cD2": (1, 0), "cD3": (0, 2), "cD4": (0, 3), "cD5": (0, 5),
+}
 
 # ---------------------------------------------------------------------------
 # Bitstream format

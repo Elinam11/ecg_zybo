@@ -61,6 +61,27 @@
 #define ECG_RLE_VAL_MAX        511
 #define ECG_RLE_TOKEN_BITS     16
 
+// ---- Lossy path (bior4.4 / CDF 9/7) ----
+#define ECG_BW_FRAC_DATA       6
+#define ECG_BW_FRAC_CONST      16
+#define ECG_BW_DATA_BITS       25
+#define ECG_BW_DATA_MIN        (-16777216)
+#define ECG_BW_DATA_MAX        16777215
+#define ECG_BW_L_MAX           5
+#define ECG_BW_MIN_APPROX      16
+#define ECG_BW_BND_MARGIN      32
+#define ECG_BW_LIFT_ALPHA_Q16  (-103949)
+#define ECG_BW_LIFT_BETA_Q16   (-3472)
+#define ECG_BW_LIFT_GAMMA_Q16  57862
+#define ECG_BW_LIFT_DELTA_Q16  29066
+#define ECG_BW_SCALE_LOW_Q16   75340
+#define ECG_BW_SCALE_HIGH_Q16  (-57007)
+#define ECG_BW_DZ_T_Q6         64
+#define ECG_BW_DZ_INV_D_Q16    65536
+#define ECG_BW_RICE_Q_ESC      31
+#define ECG_BW_RICE_ESC_BITS   32
+#define ECG_BW_RICE_K_NTOK     4
+
 // ---- UART transport framing (PS firmware and host decoder) ----
 #define ECG_UART_SYNC          0x45434731u
 #define ECG_UART_PREAMBLE      3

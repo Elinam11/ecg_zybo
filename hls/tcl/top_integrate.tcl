@@ -23,19 +23,26 @@ ecg_report_summary top
 #
 # ecg_top packs inline (no DATAFLOW+AXIS). That avoids the historic cosim deadlock
 # where the packer blocked on TREADY while the TB waited for ap_done.
-if {[ecg_ensure_cosim_golden]} {
+if {[info exists ::env(ECG_SKIP_COSIM)] && $::env(ECG_SKIP_COSIM) ne "0"} {
+    puts "SKIPPING cosim (ECG_SKIP_COSIM)"
+} elseif {[ecg_ensure_cosim_golden]} {
     cosim_design -rtl verilog -trace_level none -argv "$ECG_COSIM_RECORD"
 } else {
     puts "SKIPPING cosim: golden vectors unavailable"
 }
 
 # ---- Package for Vivado IP integrator ----
-export_design -format ip_catalog \
-    -display_name "ECG Adaptive Compressor" \
-    -description "Real-time adaptive ECG compression (QRS lossless + non-QRS Haar/RLE)" \
-    -vendor "capstone" \
-    -library "ecg" \
-    -version "1.0"
-
-puts "=== Top-level complete: IP exported ==="
+# Export is independent of cosim. Skipping it leaves Vivado on a stale IP whose
+# BRAM estimate still overflows the XC7Z010 at validate_bd_design.
+if {[info exists ::env(ECG_SKIP_EXPORT)] && $::env(ECG_SKIP_EXPORT) ne "0"} {
+    puts "SKIPPING export_design (ECG_SKIP_EXPORT)"
+} else {
+    export_design -format ip_catalog \
+        -display_name "ECG Adaptive Compressor" \
+        -description "Real-time adaptive ECG compression (QRS lossless + non-QRS bior4.4)" \
+        -vendor "capstone" \
+        -library "ecg" \
+        -version "1.0"
+    puts "=== Top-level complete: IP exported ==="
+}
 exit 0

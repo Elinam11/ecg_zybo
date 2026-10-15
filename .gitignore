@@ -28,3 +28,5 @@ ps/workspace/
 !data/coe/*.bin
 #paper
 paper/
+#results
+results/

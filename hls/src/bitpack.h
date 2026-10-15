@@ -15,8 +15,8 @@
 // ecg_bitpack_finish() can mark the genuinely final word with last = true. The cost is
 // a single register of latency.
 struct ecg_bitpacker {
-    uint64_t accumulator;   // pending bits, right-aligned within the low `count` bits
-    int count;              // number of valid bits held in the accumulator
+    uint32_t accumulator;   // pending bits (< 32), right-aligned in the low `count` bits
+    int count;              // number of valid bits held in the accumulator (0..31)
     ecg_word_t checksum;    // running 32-bit additive checksum of produced words
     uint32_t words_out;     // words produced (including the one still held back)
     ecg_word_t pending;     // word held back so TLAST can be placed correctly
@@ -24,6 +24,9 @@ struct ecg_bitpacker {
 };
 
 void ecg_bitpack_init(ecg_bitpacker& p);
+
+// 3-cycle register. Used to keep a 2.55 ns add off the packer / Rice call.
+uint32_t ecg_hold_u32(uint32_t x);
 
 // Append `nbits` (0..32) of `value`, emitting complete words to `out`.
 void ecg_bitpack_put(ecg_bitpacker& p, uint32_t value, int nbits,
@@ -78,6 +81,9 @@ static inline ecg_coder_out ecg_coder_pack(ecg_bitpacker& packer,
 void ecg_emit_bits(ecg_coder_out& o, uint32_t value, int nbits);
 void ecg_emit_align(ecg_coder_out& o);
 void ecg_emit_op(ecg_coder_out& o, uint8_t op, uint32_t value);
+// One instance for QRS and non-QRS: a variable (1<<q) unary inlined at every
+// Rice call site is thousands of LUTs.
+void ecg_emit_golomb_rice(ecg_coder_out& o, uint32_t value, int k);
 
 // DATAFLOW sink process: drain the coder's token FIFO, pack the bit fields into 32-bit
 // words, drive the AXI4-Stream, and publish the run statistics.

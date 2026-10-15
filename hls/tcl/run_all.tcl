@@ -67,7 +67,7 @@ if {[ecg_ensure_cosim_golden]} {
 }
 export_design -format ip_catalog \
     -display_name "ECG Adaptive Compressor" \
-    -description "Real-time adaptive ECG compression (QRS lossless + non-QRS Haar/RLE)" \
+    -description "Real-time adaptive ECG compression (QRS lossless + non-QRS bior4.4)" \
     -vendor "capstone" -library "ecg" -version "1.0"
 
 puts "\n###############################################################"

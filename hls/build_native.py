@@ -33,7 +33,7 @@ BUILD = HLS_DIR / "build"
 MODULES = {
     "tb_packer": ["bitpack.cpp", "detect.cpp", "lossless.cpp", "lossy.cpp",
                   "ecg_top.cpp"],
-    "tb_detect": ["detect.cpp"],
+    "tb_detect": ["detect.cpp", "bitpack.cpp"],
     "tb_lossless": ["bitpack.cpp", "lossless.cpp"],
     "tb_lossy": ["bitpack.cpp", "lossy.cpp"],
     "tb_top": ["bitpack.cpp", "detect.cpp", "lossless.cpp", "lossy.cpp",

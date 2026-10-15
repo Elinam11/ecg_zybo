@@ -59,6 +59,29 @@ def prd_baseline_inclusive(original: np.ndarray, reconstructed: np.ndarray,
     return 100.0 * float(np.sqrt(error / energy))
 
 
+def snr_db(original: np.ndarray, reconstructed: np.ndarray) -> float:
+    """10 log10(sum(x^2) / sum((x-xhat)^2)). inf if the error is exactly zero."""
+    ref = np.asarray(original, dtype=np.float64)
+    rec = np.asarray(reconstructed, dtype=np.float64)
+    if ref.size == 0:
+        return float("inf")
+    energy = float(np.sum(ref * ref))
+    error = float(np.sum((ref - rec) ** 2))
+    if error == 0.0:
+        return float("inf")
+    if energy == 0.0:
+        return float("-inf")
+    return 10.0 * float(np.log10(energy / error))
+
+
+def rmse(original: np.ndarray, reconstructed: np.ndarray) -> float:
+    ref = np.asarray(original, dtype=np.float64)
+    rec = np.asarray(reconstructed, dtype=np.float64)
+    if ref.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean((ref - rec) ** 2)))
+
+
 def compression_ratio(sample_count: int, compressed_bits: int) -> float:
     """CR = uncompressed bits / compressed bits, header included."""
     if compressed_bits <= 0:

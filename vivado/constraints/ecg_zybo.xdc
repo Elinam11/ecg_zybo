@@ -13,3 +13,11 @@ set_property -dict { PACKAGE_PIN V12  IOSTANDARD LVCMOS33 } [get_ports { tx_line
 ## oversamples internally, so the output has no meaningful timing relationship to
 ## anything else in the design.
 set_false_path -to [get_ports tx_line]
+
+## Keep the HP0 interconnect next to the PS (left side of XC7Z010). Area_Explore
+## otherwise parks SmartConnect at SLICE_X39Y98 and S_AXI_HP0_AWSIZE misses by
+## ~0.17 ns of route delay while the ECG core itself is already positive-slack.
+create_pblock pblock_ps_hp
+resize_pblock pblock_ps_hp -add {SLICE_X0Y0:SLICE_X9Y49}
+add_cells_to_pblock pblock_ps_hp [get_cells -quiet -hier -filter {NAME =~ *smartconnect_hp*}]
+set_property SNAPPING_MODE ON [get_pblocks pblock_ps_hp]

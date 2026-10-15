@@ -18,7 +18,7 @@ import time
 import _bootstrap  # noqa: F401
 import numpy as np
 
-from ecg_ref import config, detect, pipeline, preprocess
+from ecg_ref import config, detect, pipeline, pipeline_bw, preprocess
 
 
 def analyse(record: str, emit_golden: bool, n_samples: int | None = None,
@@ -33,7 +33,13 @@ def analyse(record: str, emit_golden: bool, n_samples: int | None = None,
         sensitivity = ppv = float("nan")
 
     if emit_golden:
+        # Detection / QRS intermediates from the shared pass-1 model, then the
+        # bior4.4 bitstream the HLS testbenches actually compare against.
         pipeline.write_golden(golden_name or record, encoded)
+        bw = pipeline_bw.encode_record_bw(
+            record, config.BW_DZ_T_FROZEN, config.BW_DZ_A_FROZEN,
+            n_samples=n_samples)
+        pipeline_bw.write_golden_bw(golden_name or record, encoded=bw)
 
     qrs_bits = sum(p.bit_count for p in encoded.qrs_payloads)
     nonqrs_bits = sum(p.bit_count for p in encoded.nonqrs_payloads)

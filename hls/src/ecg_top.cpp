@@ -97,7 +97,7 @@ encode_regions:
             if (len > ECG_MAX_LOSSY_SEGMENT) len = ECG_MAX_LOSSY_SEGMENT;
             int sat = 0;
             ecg_encode_nonqrs(ecg_bram, cursor, (int)len, coeff_buf, coeff_scratch, out,
-                              &sat);
+                              &sat, 0, 0, 0, 0);
             saturated_total += (uint32_t)sat;
             cursor += len;
         }

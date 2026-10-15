@@ -11,7 +11,10 @@ __all__ = [
     "detect",
     "lossless",
     "lossy",
+    "lossy_bw",
     "packer",
     "pipeline",
+    "pipeline_bw",
     "metrics",
+    "pan_tompkins",
 ]

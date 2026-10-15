@@ -138,14 +138,22 @@ if {$opt_bd_only} {
 # ---------------------------------------------------------------------------
 # Synthesis and implementation (area-first: XC7Z010 is LUT/slice bound)
 # ---------------------------------------------------------------------------
-# Flow_AreaOptimized_high + Area_Explore target LUT/slice packing. Control-set
-# count on this design is high (HLS pipelines); ExploreArea merges equivalent
-# drivers / CE where safe so FFs can share slices (Place 30-487).
+# XC7Z010 slice packing is limited by unique control sets (Place 30-487): each
+# slice holds one CE/reset. Performance_ExtraTimingOpt used 802 control sets and
+# 17663 combined LUTs (device 17600) and failed by 10 slices. Area_Explore +
+# ExploreArea merge equivalent CE/reset so FFs share slices. The peak-search
+# hold already removed the BRAM Tco from the compare; post-route phys_opt
+# recovers remaining slack.
 set_property strategy Flow_AreaOptimized_high [get_runs synth_1]
 set_property strategy Area_Explore [get_runs impl_1]
 set_property STEPS.OPT_DESIGN.ARGS.DIRECTIVE ExploreArea [get_runs impl_1]
-# Default place (not ExtraNetDelay): packing matters more than wire delay here.
 set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE Default [get_runs impl_1]
+set_property STEPS.PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
+set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE Explore [get_runs impl_1]
+# Post-route Explore physopt marks the run Failed when WNS stays slightly
+# negative (HP0 AWSIZE route at 100% slices). Close those nets in-script with
+# unroute + tns_cleanup instead; that recovered WNS -0.169 -> +0.021.
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED false [get_runs impl_1]
 
 launch_runs synth_1 -jobs $opt_jobs
 wait_on_run synth_1
@@ -178,7 +186,7 @@ puts $_lfh "{\"sessionId\":\"0362fe\",\"runId\":\"pre-fix\",\"hypothesisId\":\"H
 close $_lfh
 # #endregion
 
-launch_runs impl_1 -to_step write_bitstream -jobs $opt_jobs
+launch_runs impl_1 -to_step route_design -jobs $opt_jobs
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] != "100%"} {
     # #region agent log
@@ -208,6 +216,28 @@ if {[get_property PROGRESS [get_runs impl_1]] != "100%"} {
 
 open_run impl_1
 
+proc ecg_wns {} {
+    return [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
+}
+
+# Area_Explore fills every slice, so SmartConnect->PS HP0 AWSIZE can miss by
+# ~0.2 ns of route. Unroute the violators and TNS-cleanup; that closed -0.169.
+if {[ecg_wns] < 0} {
+    set vnets [list]
+    foreach p [get_timing_paths -max_paths 16 -nworst 1 -setup -slack_lesser_than 0] {
+        foreach n [get_nets -quiet -of_objects $p] {
+            if {$n ne ""} { lappend vnets $n }
+        }
+    }
+    set vnets [lsort -unique $vnets]
+    if {[llength $vnets] > 0} {
+        puts "unrouting [llength $vnets] violating nets (WNS [ecg_wns] ns)"
+        catch {route_design -unroute -nets $vnets}
+    }
+    route_design -directive Explore -tns_cleanup
+    puts "after tns_cleanup WNS [ecg_wns] ns"
+}
+
 # ---------------------------------------------------------------------------
 # Report: timing and utilisation against the Phase 3 budget
 # ---------------------------------------------------------------------------
@@ -216,7 +246,7 @@ file mkdir $report_dir
 report_utilization -file "$report_dir/utilization_${opt_record}.rpt"
 report_timing_summary -file "$report_dir/timing_${opt_record}.rpt"
 
-set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
+set wns [ecg_wns]
 set whs [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -hold]]
 puts "---------------------------------------------------------------"
 puts " setup WNS : $wns ns"
@@ -248,6 +278,7 @@ if {$wns < 0} {
 # ---------------------------------------------------------------------------
 # Hardware handoff
 # ---------------------------------------------------------------------------
+write_bitstream -force "$proj_dir/${proj_name}.runs/impl_1/${::BD_NAME}_wrapper.bit"
 set xsa "$ECG_VIVADO_DIR/ecg_zybo.xsa"
 write_hw_platform -fixed -include_bit -force -file $xsa
 puts "wrote $xsa"

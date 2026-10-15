@@ -3,10 +3,21 @@
 
 int ecg_select_k(uint64_t residual_sum, int count) {
     if (count <= 0) return 0;
-    const uint64_t mean = residual_sum / (uint64_t)count;
-    if (mean == 0) return 0;                     // avoids log2(0)
-    const int k = ecg_floor_log2(mean);
-    return (k > ECG_GR_K_MAX) ? ECG_GR_K_MAX : k;
+    // floor(log2(sum / count)), capped at GR_K_MAX. Same result as dividing then
+    // taking floor_log2, without a general divider (~300 LUT on the XC7Z010).
+    if (residual_sum < (uint64_t)count) return 0;
+    int k = 0;
+    uint64_t thresh = (uint64_t)count;
+    while (k < ECG_GR_K_MAX) {
+#pragma HLS PIPELINE off
+#pragma HLS UNROLL off
+#pragma HLS LOOP_TRIPCOUNT min = 0 max = 15
+        const uint64_t next = thresh << 1;
+        if (residual_sum < next) break;
+        thresh = next;
+        k++;
+    }
+    return k;
 }
 
 int ecg_encode_qrs(const ecg_bram_word_t* samples, ecg_index_t start, int length,
@@ -25,20 +36,24 @@ int ecg_encode_qrs(const ecg_bram_word_t* samples, ecg_index_t start, int length
     // orig[start-2:] (record 100: k=2, CR~9.58, PRD QRS ~55%).
 load_qrs:
     {
-        int i = 0;
-        if ((start & 1) && length > 0) {
+        // 8-bit index. A 32-bit compare here was chained with the BRAM load
+        // into a 9.6 ns path (encode_stage slack -1.19). The window is 73 samples.
+        const uint8_t nwin = (uint8_t)length;
+        uint8_t i = 0;
+        if ((start & 1) && nwin > 0) {
             window[0] = ecg_bram_read(samples, start);
             i = 1;
         }
-        for (; i + 1 < length; i += 2) {
+        for (; (uint8_t)(i + 1u) < nwin; i = (uint8_t)(i + 2u)) {
 #pragma HLS LOOP_TRIPCOUNT min = 0 max = (ECG_QRS_WINDOW / 2)
 #pragma HLS PIPELINE off
-            const uint32_t word = ecg_bram_load_word(samples, (start + i) >> 1);
+            const ecg_index_t word_idx = (start + (ecg_index_t)i) >> 1;
+            const uint32_t word = ecg_bram_load_word(samples, word_idx);
             window[i] = (ecg_sample_t)(uint16_t)(word & 0xFFFFu);
             window[i + 1] = (ecg_sample_t)(uint16_t)(word >> 16);
         }
-        if (i < length) {
-            window[i] = ecg_bram_read(samples, start + i);
+        if (i < nwin) {
+            window[i] = ecg_bram_read(samples, start + (ecg_index_t)i);
         }
     }
 
@@ -71,8 +86,6 @@ k_scan:
     ecg_emit_bits(out, (uint32_t)k, ECG_GR_K_BITS);
 
     // ---- Pass 2: emit the Golomb-Rice codewords ----
-    const uint32_t remainder_mask =
-        (k > 0) ? ((1u << k) - 1u) : 0u;
 gr_encode:
     for (int i = ECG_ANCHOR_COUNT; i < length; i++) {
 #pragma HLS LOOP_TRIPCOUNT min = 0 max = ECG_QRS_WINDOW
@@ -80,21 +93,7 @@ gr_encode:
         const int32_t prev1 = (int32_t)window[i - 1];
         const int32_t prev2 = (int32_t)window[i - 2];
         const int32_t error = (int32_t)window[i] - ecg_predict(prev1, prev2);
-        const uint32_t mapped = ecg_zigzag(error);
-        const uint32_t quotient = mapped >> k;
-
-        if (quotient >= (uint32_t)ECG_GR_Q_ESCAPE) {
-            // Escape: a fixed run of ones with NO terminating zero, then the raw
-            // value. Without this an outlier residual would emit a unary quotient
-            // thousands of bits long; the escape caps any symbol at 63 bits.
-            ecg_emit_bits(out, 0x7FFFFFFFu, ECG_GR_Q_ESCAPE);
-            ecg_emit_bits(out, mapped, ECG_GR_ESCAPE_BITS);
-        } else {
-            // `quotient` ones followed by a terminating zero, then k remainder bits.
-            const uint32_t unary = ((1u << quotient) - 1u) << 1;
-            ecg_emit_bits(out, unary, (int)quotient + 1);
-            if (k > 0) ecg_emit_bits(out, mapped & remainder_mask, k);
-        }
+        ecg_emit_golomb_rice(out, ecg_zigzag(error), k);
     }
 
     ecg_emit_align(out);

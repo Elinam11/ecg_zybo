@@ -1,8 +1,8 @@
 """Receive a compressed ECG frame over UART, decode it, and score it.
 
-The decoder is the Phase 1 reference decoder, unmodified. That is the point: the
-hardware passes only if the same code that validated the algorithm also reconstructs
-the hardware's output, and the received frame is byte-identical to the golden one.
+The decoder is the bior4.4 (method-a, cA DPCM) reference decoder. The hardware
+passes only if that same model reconstructs the board's output, and the received
+frame is byte-identical to the golden bitstream.
 
 Three sources, all feeding the same parser:
 
@@ -30,7 +30,7 @@ from pathlib import Path
 import _bootstrap  # noqa: F401
 import numpy as np
 
-from ecg_ref import config, metrics, packer, pipeline, preprocess
+from ecg_ref import config, metrics, packer, pipeline_bw, preprocess
 
 PREAMBLE_BYTES = config.UART_PREAMBLE_WORDS * 4
 
@@ -110,32 +110,42 @@ def reader_from_serial(port: str, baud: int, timeout: float):
 
 def evaluate(frame: bytes, record: str | None) -> dict:
     """Decode a received frame and, if the record is known, score it."""
-    decoded = packer.decode_frame(frame)
+    words = [int.from_bytes(frame[i:i + 4], "big")
+             for i in range(0, len(frame), 4)]
+    header = packer.FrameHeader.from_words(words)
+    body = words[config.HEADER_WORDS:]
+    checksum_ok = packer.payload_checksum(body) == header.checksum
+    rec, qrs_mask = pipeline_bw.decode_from_bytes_bw(
+        frame, config.BW_DZ_T_FROZEN, config.BW_DZ_A_FROZEN)
+    rec_i = np.rint(rec).astype(np.int64)
     result = {
-        "sample_count": decoded.header.sample_count,
-        "qrs_count": decoded.header.qrs_count,
-        "fs": decoded.header.fs,
-        "checksum_ok": decoded.checksum_ok,
-        "segments": decoded.segment_count,
+        "sample_count": header.sample_count,
+        "qrs_count": header.qrs_count,
+        "fs": header.fs,
+        "checksum_ok": checksum_ok,
+        "segments": 0,
         "frame_bytes": len(frame),
-        "cr": decoded.header.sample_count * config.SAMPLE_BITS / (len(frame) * 8),
+        "cr": header.sample_count * config.SAMPLE_BITS / max(1, len(frame) * 8),
     }
     if record is None:
         return result
 
     original = preprocess.preprocess_record(record)
-    n = min(len(original), len(decoded.samples))
+    n = min(len(original), len(rec_i))
+    golden = pipeline_bw.encode_record_bw(
+        record, config.BW_DZ_T_FROZEN, config.BW_DZ_A_FROZEN)
     evaluation = metrics.evaluate(
         record=record,
         original=original[:n],
-        reconstructed=decoded.samples[:n],
-        qrs_mask=decoded.qrs_mask[:n],
+        reconstructed=rec_i[:n],
+        qrs_mask=qrs_mask[:n],
         compressed_bits=len(frame) * 8,
-        qrs_count=decoded.header.qrs_count,
-        segment_count=decoded.segment_count,
-        checksum_ok=decoded.checksum_ok,
+        qrs_count=header.qrs_count,
+        segment_count=len(golden.segments),
+        checksum_ok=checksum_ok,
     )
     result.update({
+        "segments": len(golden.segments),
         "cr": evaluation.compression_ratio,
         "prd_strict": evaluation.prd_overall,
         "prd_baseline": evaluation.prd_overall_baseline,
@@ -143,9 +153,6 @@ def evaluate(frame: bytes, record: str | None) -> dict:
         "passed": evaluation.passed,
     })
 
-    # The strongest check available: the board must have produced the same bytes the
-    # reference model does, not merely bytes that decode to a similar signal.
-    golden = pipeline.encode_record(record)
     result["matches_golden"] = (frame == golden.payload)
     if not result["matches_golden"]:
         got = [int.from_bytes(frame[i:i + 4], "big") for i in range(0, len(frame), 4)]
@@ -208,7 +215,8 @@ def main() -> int:
 
     if args.loopback:
         record = record or args.loopback
-        encoded = pipeline.encode_record(args.loopback)
+        encoded = pipeline_bw.encode_record_bw(
+            args.loopback, config.BW_DZ_T_FROZEN, config.BW_DZ_A_FROZEN)
         stream = build_transport_frame(encoded.words, latency_cycles=0)
         print(f"loopback: record {args.loopback}, "
               f"{len(encoded.words)} words synthesised")

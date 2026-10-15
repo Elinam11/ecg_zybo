@@ -100,9 +100,8 @@ set ECG_COSIM_SAMPLES 10800     ;# 30 s at 360 Hz
 proc ecg_ensure_cosim_golden {} {
     global ECG_DATA ECG_REPO ECG_RECORD ECG_COSIM_RECORD ECG_COSIM_SAMPLES
     set dir "$ECG_DATA/golden/$ECG_COSIM_RECORD"
-    if {[file exists "$dir/bitstream_words.txt"]} {
-        return 1
-    }
+    # Always regenerate: a leftover Haar (or otherwise stale) bitstream_words.txt
+    # makes C-TB fail before RTL simulation even starts.
     puts "Generating $ECG_COSIM_SAMPLES-sample cosim golden vectors from record $ECG_RECORD..."
     if {[catch {
         exec [ecg_python] "$ECG_REPO/python/scripts/run_reference.py" $ECG_RECORD \
